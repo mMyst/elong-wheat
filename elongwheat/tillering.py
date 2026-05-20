@@ -4,41 +4,39 @@ import math
 
 from elongwheat import parameters as elongwheat_parameters
 
-def update_tiller_replications(g, ms_vid, adel_wheat, plant_density, tillers_replications, gaic, coef_buffer_til, coef_delay_til):
+def update_tiller_replications(g, adel_wheat, plant_density,tillers_replications, gaic, coef_buffer_til, coef_delay_til,
+                               GAIp=None):
     """
     Evaluates thermal time since primordium and updates tiller replications 
     if the conditions for tiller emergence are met.
     """
     # Fetch plastochrone from parameters
     plastochrone = elongwheat_parameters.PARAMETERS.PLASTOCHRONE
-    
-    # 1. on prend l'age de la plante comme 'nb de feuilles + teq/plastochrone'
-    nb_leaves = g.property('nb_leaves')[ms_vid]
-    teq = g.property('teq_since_primordium')[ms_vid]
-    plastochron_age = nb_leaves + (teq / plastochrone)
-    
-    # 2. on décale de 3 pour la cohorte de talle et le délai souhaité 
-    shifted_age = plastochron_age - 3 - coef_delay_til
-    tiller_rank = math.floor(shifted_age)
-    
-    # 3. on vérifie si on se trouve dans la fenêtre d'émission de talle, avec le buffer donne sa largeur 
-    in_window = (0 <= shifted_age - tiller_rank < coef_buffer_til)
+    ms_vid = next(vid for vid, label in g.property('label').items() if label == 'MS') #get MS vid id 
 
-    #mais du coup ça m'embrouille => on coordonne le talle avec l'émission du plaste n+3 
-    #mais si on ajoute un délai de 2 plasto par exemple, on se synchronise avec le plaste n+5
-    # 
-    #le talle de la f1 n'est pas crée avec le méristème de la f1 ? 
-    
-    if in_window and tiller_rank > 0:
-        GAIp = compute_1plant_GAIp(adel_wheat.scene(g), plant_density)                                
+    for vid in g.components_at_scale(ms_vid,3):
+        tiller_rank = g.index(vid)   
+        if (g.label(vid) == 'metamer0' or 'T'+tiller_rank in tillers_replications.keys()) or 'hiddenzone' not in g.get_vertex_property(vid).keys() :
+            continue
+
+        hz_age = g.get_vertex_property(vid)['hiddenzone']['hiddenzone_age']
         
-        tillers_replications = tiller_initiation(
-            tillers_replications, 
-            tiller_rank, 
-            GAIp, 
-            GAIc=gaic
-        ) 
+
+        in_window = (coef_delay_til*plastochrone <= hz_age < plastochrone*(coef_delay_til +coef_buffer_til))
         
+        if in_window :
+            if GAIp is None:
+                GAIp = compute_1plant_GAIp(adel_wheat.scene(g), plant_density)   
+            
+            print(f" 🚨 Simulation gaic_{gaic}_dens_{plant_density}_delay_{coef_delay_til}_buf_{coef_buffer_til} is in window")    
+
+            tillers_replications = tiller_initiation(
+                tillers_replications, 
+                tiller_rank, 
+                GAIp, 
+                GAIc=gaic
+            ) 
+            
     return tillers_replications
 
 
@@ -65,7 +63,7 @@ def tiller_initiation(tillers_replications, tiller_rank, GAIp,GAIc=0.6):
     if GAIp < GAIc : #on/off switch. could be reworked into a probability function
         # if tillers_replications is None: #a voir si on décide d'initialiser tiller replication comme None ou comme {}
         #     tillers_replications = {}
-        tillers_replications["T"+str(tiller_rank)] = 0.5
+        tillers_replications["T"+tiller_rank] = 0.5
         print("...and it did !")
     else:
         
